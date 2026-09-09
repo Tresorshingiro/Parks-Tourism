@@ -535,6 +535,57 @@ a {
    hand most of it to the labels that made this change necessary. The 8px that
    stays is what keeps an active row's tinted block from touching the rail. */
 .modgroup.is-sole .modlist { padding-left: 8px; }
+
+/*
+ * ---------- a group of solutions inside a module ----------
+ *
+ * One application in the catalog can be a LABEL over several dashboards — Parks
+ * Operations names four. It borrows the module head's shape deliberately: same
+ * 16px icon column, same 8px gap, same uppercase 12px title, so the sidebar has
+ * one way of saying "these belong to that" rather than two competing ones.
+ *
+ * It carries no count. The module head's count told you how much was hidden
+ * below the fold; a group's dashboards are all within a few rows of its title,
+ * so the number is just noise next to the list that already answers it.
+ */
+/*
+ * The gap BETWEEN groups has to beat the gap between a group's own rows, or
+ * the second head reads as another item in the first list rather than the start
+ * of a new one. Rows sit 3px apart, so 18px is what separates the two.
+ */
+.solgroup + .solgroup { margin-top: 18px; }
+
+.solgroup__head {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  padding: 0 6px 5px;
+}
+/* Nudged onto the first line of the title rather than centred on the block. */
+.solgroup__icon { grid-column: 1; margin-top: 2px; color: var(--accent-dark); }
+.solgroup__title {
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--chrome-text);
+  text-wrap: balance;
+}
+
+/*
+ * Nested rows indent for the same reason module rows do (see .modlist above):
+ * far enough that the row's ICON starts past where the group's TITLE starts,
+ * so the two icon columns never interleave and the offset alone reads as
+ * nesting. The head pads 6px + 16px icon + 8px gap = 30px to its title; this
+ * pads 26px and .modlist__item another 11px, putting the row icon at 37px.
+ *
+ * This wins over the .is-sole rule below it in source order, which is what
+ * makes the indent come back for grouped rows on a portal that has no module
+ * head. An ungrouped row on the same portal keeps the flush 8px it has today.
+ */
+.modgroup.is-sole .modlist--nested { padding-left: 26px; }
 .modlist__item:hover { background: var(--chrome-raised); color: var(--chrome-text); }
 .modlist__item.is-active {
   background: var(--accent-soft);

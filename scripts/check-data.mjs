@@ -3,23 +3,27 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { modules, totals } from '../src/data/modules.js'
+import { modules, totals, leafApps } from '../src/data/modules.js'
 import { manifest } from '../src/config/image-manifest.js'
 
-const EXPECTED = { modules: 1, apps: 2, features: 10 }
+const EXPECTED = { modules: 1, apps: 9, features: 10 }
 
 /*
  * Per-module expected counts.
  *
- * Transcribed from the source spreadsheet, plus one deliberate departure from
- * it: Wildlife Conservation Mapping is filed under Conservation Management in
- * the spreadsheet and was moved here, so this module carries two applications
- * where the spreadsheet lists one. The feature list is untouched — the
- * spreadsheet records features per module, not per application, and this one
- * already covers ranger reporting and wildlife monitoring.
+ * Applications are counted as LEAVES, so a group label never inflates the
+ * total. The spreadsheet lists this module's park operations as one entry,
+ * being one Experience Builder app; it is published here as the four dashboards
+ * that app navigated to, which is the same content addressed one level down.
+ * The feature list is untouched — the spreadsheet records features per module,
+ * not per application.
+ *
+ * Wildlife Conservation Mapping arrived from the Conservation portal as a
+ * single entry; it is published here as the five dashboards it actually covers.
+ * So nine applications under two groups, where the spreadsheet lists two.
  */
 const PER_MODULE = {
-  parks: { apps: 2, features: 10 },
+  parks: { apps: 9, features: 10 },
 }
 // This portal's applications live on RDB's ArcGIS Enterprise, not on GeoHub.
 // Must agree with PORTAL_URL in .env and PORTAL_ORIGIN in src/lib/portal.js.
@@ -48,15 +52,17 @@ if (totals.features !== EXPECTED.features)
   failures.push(`features: expected ${EXPECTED.features}, got ${totals.features}`)
 
 for (const m of modules) {
+  const apps = leafApps(m)
+
   if (!m.features.length) failures.push(`${m.id}: no features`)
-  if (!m.apps.length) failures.push(`${m.id}: no applications`)
+  if (!apps.length) failures.push(`${m.id}: no applications`)
 
   const expected = PER_MODULE[m.id]
   if (!expected) {
     failures.push(`${m.id}: unexpected module id, not in PER_MODULE`)
   } else {
-    if (m.apps.length !== expected.apps)
-      failures.push(`${m.id}: expected ${expected.apps} applications, got ${m.apps.length}`)
+    if (apps.length !== expected.apps)
+      failures.push(`${m.id}: expected ${expected.apps} applications, got ${apps.length}`)
     if (m.features.length !== expected.features)
       failures.push(`${m.id}: expected ${expected.features} features, got ${m.features.length}`)
   }
@@ -67,9 +73,21 @@ for (const m of modules) {
       `${m.id}: accentText ${m.accentText} is ${ratio.toFixed(2)}:1 on ${GROUND}, needs 4.5:1`,
     )
 
+  /*
+   * A group is a label over other applications, so it must look like one:
+   * a name, children, and NO url of its own. A group that kept a url would be
+   * embedded as a fifth row alongside the dashboards it is meant to head.
+   */
   for (const app of m.apps) {
-    if (!app.url.startsWith(PORTAL_HOST))
-      failures.push(`${m.id}: "${app.name}" url is not an absolute GeoHub https URL`)
+    if (!app.apps) continue
+    if (!app.name) failures.push(`${m.id}: a group has no name`)
+    if (app.url) failures.push(`${m.id}: group "${app.name}" carries a url; groups do not open`)
+    if (!app.apps.length) failures.push(`${m.id}: group "${app.name}" has no applications`)
+  }
+
+  for (const app of apps) {
+    if (!app.url || !app.url.startsWith(PORTAL_HOST))
+      failures.push(`${m.id}: "${app.name}" url is not an absolute ${PORTAL_HOST} https URL`)
   }
 }
 

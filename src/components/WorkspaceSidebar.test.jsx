@@ -136,3 +136,51 @@ describe('WorkspaceSidebar', () => {
     }
   })
 })
+
+/*
+ * Grouped solutions.
+ *
+ * A group is a LABEL, not a destination: the Experience Builder app it is named
+ * after is no longer embedded anywhere, so the head must not be a link, and it
+ * must not be a disclosure either — this sidebar has never hidden anything
+ * behind one and the four dashboards are always on screen.
+ */
+describe('WorkspaceSidebar grouping', () => {
+  const named = modules.flatMap((mod) => mod.groups.filter((g) => g.name).map((g) => [mod, g]))
+
+  it('has a group to test', () => {
+    expect(named.length).toBeGreaterThan(0)
+  })
+
+  it('shows each group name, as text rather than something to click', () => {
+    renderAt()
+    for (const [mod, g] of named) {
+      const scope = group(mod)
+      expect(scope.getByText(g.name)).toBeInTheDocument()
+      expect(scope.queryByRole('link', { name: g.name })).not.toBeInTheDocument()
+      expect(scope.queryByRole('button', { name: g.name })).not.toBeInTheDocument()
+    }
+  })
+
+  it('links every dashboard in a group to its own route', () => {
+    renderAt()
+    for (const [mod, g] of named) {
+      for (const solution of g.solutions) {
+        expect(row(mod, solution)).toHaveAttribute(
+          'href',
+          `/module/${mod.id}/app/${solution.id}`,
+        )
+      }
+    }
+  })
+
+  it('marks only the open dashboard active, never its group', () => {
+    const [mod, g] = named[0]
+    const open = g.solutions[1]
+    renderAt(`/module/${mod.id}/app/${open.id}`)
+    expect(row(mod, open)).toHaveClass('is-active')
+    for (const other of g.solutions.filter((s) => s.id !== open.id)) {
+      expect(row(mod, other)).not.toHaveClass('is-active')
+    }
+  })
+})

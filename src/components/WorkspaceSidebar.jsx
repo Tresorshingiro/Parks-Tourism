@@ -78,21 +78,48 @@ export default function WorkspaceSidebar() {
                 </div>
               )}
 
-              <ul className="modlist">
-                {mod.solutions.map((solution) => (
-                  <li key={solution.id}>
-                    <NavLink
-                      to={`/module/${mod.id}/app/${solution.id}`}
-                      className={`modlist__item ${
-                        activeSolutionId === solution.id ? 'is-active' : ''
-                      }`}
+              {mod.groups.map((group, i) => {
+                /*
+                 * A named group is a heading with its dashboards under it; an
+                 * unnamed one is a bare row, exactly as before grouping
+                 * existed. The head is plain text — not a link, because the
+                 * app it is named after is no longer embedded, and not a
+                 * disclosure, because this sidebar has never hidden anything
+                 * behind one. Every dashboard is on screen at all times.
+                 */
+                const heading = group.name ? `${mod.id}-group-${i}` : undefined
+
+                return (
+                  <div key={group.name || `solo-${i}`} className="solgroup">
+                    {group.name && (
+                      <div className="solgroup__head" id={heading}>
+                        <IconMark name={group.icon} size={16} className="solgroup__icon" />
+                        <span className="solgroup__title">{group.name}</span>
+                      </div>
+                    )}
+
+                    <ul
+                      className={`modlist ${group.name ? 'modlist--nested' : ''}`}
+                      aria-labelledby={heading}
                     >
-                      <IconMark name={solution.icon} size={16} />
-                      <span>{solution.name}</span>
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+                      {group.solutions.map((solution) => (
+                        <li key={solution.id}>
+                          <NavLink
+                            to={`/module/${mod.id}/app/${solution.id}`}
+                            className={`modlist__item ${
+                              activeSolutionId === solution.id ? 'is-active' : ''
+                            }`}
+                          >
+                            <IconMark name={solution.icon} size={16} />
+                            <span>{solution.name}</span>
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
+
             </section>
           )
         })}

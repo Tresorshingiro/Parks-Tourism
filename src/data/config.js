@@ -36,8 +36,15 @@ export const portal = {
  * repoint a link, and so a reorder cannot change a URL.
  */
 const SOLUTION_IDS = {
-  "https://gis.rdb.rw/portal/apps/experiencebuilder/experience/?id=13f0692d8992482fa9d516609f0bf4b3": "parks-operations",
-  "https://gis.rdb.rw/portal/apps/dashboards/c33a701b3592459c9ded457313ac8a8c": "wildlife-conservation",
+  "https://gis.rdb.rw/portal/apps/dashboards/c33a701b3592459c9ded457313ac8a8c": "gorilla-health",
+  "https://gis.rdb.rw/portal/apps/dashboards/c1f3d6464dac4fa1a5c986b558d04331": "golden-monkey",
+  "https://gis.rdb.rw/portal/apps/dashboards/9db15ec819064462a1a325552daa6ac2": "chimpanzee",
+  "https://gis.rdb.rw/portal/apps/dashboards/37e9e92af64a41878564d035c41bd5cf": "plant-monitoring",
+  "https://gis.rdb.rw/portal/apps/dashboards/ca6e8cdbba0d409e8a249a910d0707cb": "human-wildlife-conflict",
+  "https://gis.rdb.rw/portal/apps/dashboards/a2851299719e40408cc131cabcf41e5f": "illegal-activities",
+  "https://gis.rdb.rw/portal/apps/dashboards/c1c9bd914a9c4cdaac8411977ae90b21": "law-enforcement",
+  "https://gis.rdb.rw/portal/apps/dashboards/2c26b366cc414a61b9ca44cb7acac4f2": "ranger-monitoring",
+  "https://gis.rdb.rw/portal/apps/dashboards/9e7b6650d9f44db899846a90c289735d": "gmn-park-conflict",
 }
 
 const MODULE_ICONS = {
@@ -45,8 +52,23 @@ const MODULE_ICONS = {
 }
 
 const SOLUTION_ICONS = {
-  "parks-operations": "map",
-  "wildlife-conservation": "activity",
+  // IconMark carries no animal glyphs, so the three species dashboards share
+  // the monitoring mark and the label does the telling. Plant gets the leaf.
+  "gorilla-health": "activity",
+  "golden-monkey": "activity",
+  "chimpanzee": "activity",
+  "plant-monitoring": "leaf",
+  "human-wildlife-conflict": "activity",
+  "illegal-activities": "activity",
+  "law-enforcement": "activity",
+  "ranger-monitoring": "map",
+  "gmn-park-conflict": "mountain",
+}
+
+/** A group's own mark, keyed by group name. */
+const GROUP_ICONS = {
+  "Parks Operations Mapping and Monitoring": "map",
+  "Wildlife Conservation Mapping": "tree",
 }
 
 /*
@@ -63,36 +85,87 @@ function softAccent(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-const catalog = catalogSource.map((mod) => ({
-  id: mod.id,
-  name: mod.name,
-  description: mod.description,
-  icon: MODULE_ICONS[mod.id] || 'map',
-  accent: mod.accent,
-  accentText: mod.accentText,
-  // Named for its role in the CSS (the rail, icon and active row), which is a
-  // dark accent on light chrome — the guarded, contrast-checked catalog value.
-  accentDark: mod.accentText,
-  accentSoft: softAccent(mod.accent, 0.12),
-  image: srcSet(mod.heroSlug).src,
-  solutions: mod.apps.map((app) => {
-    const id = SOLUTION_IDS[app.url]
-    return {
-      id,
-      name: app.name,
-      year: app.year,
-      icon: SOLUTION_ICONS[id] || 'map',
-      // Same-origin only. The Portal sends X-Frame-Options, so a frame pointed
-      // straight at gh.space.gov.rw is refused; this routes through the access
-      // server, which attaches the signed-in user's token.
-      embedUrl: id ? sameOriginEmbed(app.url) : null,
-    }
-  }),
-}))
+/** Turn one catalog application into the shape the UI renders. */
+function toSolution(app) {
+  const id = SOLUTION_IDS[app.url]
+  return {
+    id,
+    name: app.name,
+    year: app.year,
+    icon: SOLUTION_ICONS[id] || 'map',
+    // Same-origin only. The Portal sends X-Frame-Options, so a frame pointed
+    // straight at gis.rdb.rw is refused; this routes through the access
+    // server, which attaches the signed-in user's token.
+    embedUrl: id ? sameOriginEmbed(app.url) : null,
+  }
+}
 
+/*
+ * Group a module's applications for the sidebar.
+ *
+ * A catalog entry carrying `apps` becomes a named group; a bare application
+ * becomes an unnamed one, so the sidebar has a single list to walk rather than
+ * two shapes to branch on. A named group is a LABEL — no id, no route, because
+ * the Experience Builder app it is named after is no longer embedded.
+ */
+function toGroups(mod) {
+  return mod.apps.map((app) =>
+    app.apps
+      ? {
+          name: app.name,
+          icon: GROUP_ICONS[app.name] || 'layers',
+          solutions: app.apps.map(toSolution),
+        }
+      : { name: null, icon: null, solutions: [toSolution(app)] },
+  )
+}
+
+/*
+ * The flat list of routable applications.
+ *
+ * Flattened FROM `groups` rather than built alongside it, so the router and the
+ * sidebar hold the same objects and not two equal copies. Every filter below
+ * therefore only has to run over the groups; the flat view follows.
+ */
+const flatten = (groups) => groups.flatMap((g) => g.solutions)
+
+const catalog = catalogSource.map((mod) => {
+  const groups = toGroups(mod)
+  return {
+    id: mod.id,
+    name: mod.name,
+    description: mod.description,
+    icon: MODULE_ICONS[mod.id] || 'map',
+    accent: mod.accent,
+    accentText: mod.accentText,
+    // Named for its role in the CSS (the rail, icon and active row), which is a
+    // dark accent on light chrome — the guarded, contrast-checked catalog value.
+    accentDark: mod.accentText,
+    accentSoft: softAccent(mod.accent, 0.12),
+    image: srcSet(mod.heroSlug).src,
+    // What the sidebar draws.
+    groups,
+    // What the router, getSolution and every total consume — none of which
+    // know groups exist.
+    solutions: flatten(groups),
+  }
+})
+
+/*
+ * Drop anything that cannot actually be framed, then drop whatever that leaves
+ * empty — a group whose dashboards have all gone, then a module with nothing
+ * left. Filtering the groups alone is enough: the flat view is re-flattened
+ * from the result, so the two cannot disagree about what is published.
+ */
 function publishedModules(source) {
+  const live = (app) => Boolean(app.embedUrl)
   return source
-    .map((mod) => ({ ...mod, solutions: mod.solutions.filter((app) => Boolean(app.embedUrl)) }))
+    .map((mod) => {
+      const groups = mod.groups
+        .map((g) => ({ ...g, solutions: g.solutions.filter(live) }))
+        .filter((g) => g.solutions.length > 0)
+      return { ...mod, groups, solutions: flatten(groups) }
+    })
     .filter((mod) => mod.solutions.length > 0)
 }
 
