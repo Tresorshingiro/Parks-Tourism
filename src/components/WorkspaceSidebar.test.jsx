@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import WorkspaceSidebar from './WorkspaceSidebar'
 import { AuthProvider } from '../auth/AuthContext'
 import { modules, portal } from '../data/config'
+import { brand } from '../lib/brand'
 
 // The sidebar now carries the account block in its foot, so it needs the auth
 // provider standing behind it. The provider's session probe fails harmlessly
@@ -23,7 +24,19 @@ const renderAt = (path = '/') =>
 // For the same reason rows are found by their link role, not by their text: in
 // that portal the group title and the row carry identical words.
 const group = (mod) => within(screen.getByRole('region', { name: mod.name }))
-const row = (mod, solution) => group(mod).getByRole('link', { name: solution.name })
+
+/*
+ * Rows are found by href, not by label.
+ *
+ * A label can legitimately repeat: the water portal's module and its first
+ * solution are the same words, and here the group and the portal are both
+ * "Parks Operations Mapping". The href is the one thing unique to a row, and
+ * it is also what the row is FOR.
+ */
+const row = (mod, solution) =>
+  group(mod).getByRole('link', {
+    name: (name, el) => el.getAttribute('href') === `/module/${mod.id}/app/${solution.id}`,
+  })
 
 // Mirrors the component: a portal whose only module is the portal itself shows
 // no module header, because the brand above it already carries that name.
@@ -36,36 +49,26 @@ describe('WorkspaceSidebar', () => {
       expect(mod.solutions.length).toBeGreaterThan(0)
       for (const solution of mod.solutions) {
         expect(solution.embedUrl).toBeTruthy()
-        // Same-origin only — never a Portal URL, which would be frame-refused.
+        // Same-origin only — never an upstream URL, which would be
+        // frame-refused, and could carry no session even if it were not.
         expect(solution.embedUrl.startsWith('/')).toBe(true)
       }
     }
   })
 
-  it('heads the list for what it lists and names each category by its full catalog name', () => {
+  it('carries the brand badge and portal name, and names each module region in full', () => {
     renderAt()
-    const heading = soleModule ? 'Solutions' : 'Modules'
-    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Modules' })
+    expect(nav.querySelector('.sidebar__badge svg')).toBeTruthy()
+    expect(nav.querySelector('.sidebar__name')).toHaveTextContent(portal.name)
     for (const mod of modules) {
       expect(screen.getByRole('region', { name: mod.name })).toBeInTheDocument()
     }
   })
 
-  it('counts solutions with the singular/plural rule, wherever a module is headed', () => {
+  it('shows no solution counts, since every row is already on screen', () => {
     renderAt()
-    for (const mod of modules) {
-      const n = mod.solutions.length
-      const label = `${n} ${n === 1 ? 'solution' : 'solutions'}`
-      if (soleModule) {
-        // The header is one block carrying both the title and the count, so the
-        // count's absence is the header's absence. Asserting on the title
-        // instead would be ambiguous: in Water Resources the module and its
-        // first application are the same words, and the row still renders them.
-        expect(group(mod).queryByText(label)).not.toBeInTheDocument()
-      } else {
-        expect(group(mod).getByText(label)).toBeInTheDocument()
-      }
-    }
+    expect(screen.queryByText(/^\d+ solutions?$/)).not.toBeInTheDocument()
   })
 
   it('shows every solution without any disclosure to open', () => {
@@ -106,16 +109,17 @@ describe('WorkspaceSidebar', () => {
     }
   })
 
-  it('carries each module accent down to its group', () => {
+  it('colours the whole sidebar with the same brand as the login', () => {
     renderAt()
-    for (const mod of modules) {
-      const region = screen.getByRole('region', { name: mod.name })
-      expect(region).toHaveStyle({
-        '--accent': mod.accent,
-        '--accent-text': mod.accentText,
-        '--accent-dark': mod.accentDark,
-      })
-    }
+    expect(screen.getByRole('navigation', { name: 'Modules' })).toHaveStyle({
+      '--brand-accent': brand.accent,
+      '--brand-tint': brand.tint,
+    })
+  })
+
+  it('ends with a Logout button', () => {
+    renderAt()
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
   })
 
   it('takes both accents straight from the guarded catalog', async () => {
@@ -182,5 +186,38 @@ describe('WorkspaceSidebar grouping', () => {
     for (const other of g.solutions.filter((s) => s.id !== open.id)) {
       expect(row(mod, other)).not.toHaveClass('is-active')
     }
+  })
+})
+
+/*
+ * A form is nested inside its dashboard's <li>, not listed beside it. That
+ * containment is what ties a form to its dashboard, whatever the form's name.
+ */
+describe('WorkspaceSidebar forms', () => {
+  const paired = modules.flatMap((mod) =>
+    mod.groups.flatMap((g) => g.solutions.filter((s) => s.form).map((s) => [mod, s])),
+  )
+
+  it('has a form under every dashboard', () => {
+    expect(paired.length).toBe(9)
+  })
+
+  it('nests each form inside the row of the dashboard it feeds', () => {
+    renderAt()
+    for (const [mod, dashboard] of paired) {
+      const parentRow = row(mod, dashboard).closest('li')
+      const formLink = within(parentRow).getByRole('link', {
+        name: (name, el) =>
+          el.getAttribute('href') === `/module/${mod.id}/app/${dashboard.form.id}`,
+      })
+      expect(formLink).toHaveTextContent(dashboard.form.name)
+    }
+  })
+
+  it('opens a form without marking its dashboard active', () => {
+    const [mod, dashboard] = paired[0]
+    renderAt(`/module/${mod.id}/app/${dashboard.form.id}`)
+    expect(row(mod, dashboard.form)).toHaveClass('is-active')
+    expect(row(mod, dashboard)).not.toHaveClass('is-active')
   })
 })

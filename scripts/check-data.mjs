@@ -3,10 +3,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { modules, totals, leafApps } from '../src/data/modules.js'
+import { modules, totals, leafApps, leafForms } from '../src/data/modules.js'
 import { manifest } from '../src/config/image-manifest.js'
 
-const EXPECTED = { modules: 1, apps: 9, features: 10 }
+const EXPECTED = { modules: 1, apps: 9, forms: 9, features: 10 }
 
 /*
  * Per-module expected counts.
@@ -23,11 +23,21 @@ const EXPECTED = { modules: 1, apps: 9, features: 10 }
  * So nine applications under two groups, where the spreadsheet lists two.
  */
 const PER_MODULE = {
-  parks: { apps: 9, features: 10 },
+  parks: { apps: 9, forms: 9, features: 10 },
 }
 // This portal's applications live on RDB's ArcGIS Enterprise, not on GeoHub.
 // Must agree with PORTAL_URL in .env and PORTAL_ORIGIN in src/lib/portal.js.
 const PORTAL_HOST = 'https://gis.rdb.rw/'
+/*
+ * Survey123 forms are the one thing here NOT served from the portal host, so
+ * they get their own rule rather than a hole in the one above.
+ *
+ * `portalUrl` is required in the CATALOG so the entry says, to anyone reading
+ * it, which Enterprise the form belongs to. It is not what the browser uses:
+ * formEmbedUrl() replaces it with this origin's own portal proxy, which is what
+ * routes the form's portal calls somewhere the session token is attached.
+ */
+const FORM_HOST = 'https://survey123.arcgis.com/share/'
 const GROUND = '#FBFAF7'
 const failures = []
 
@@ -48,6 +58,8 @@ if (totals.modules !== EXPECTED.modules)
   failures.push(`modules: expected ${EXPECTED.modules}, got ${totals.modules}`)
 if (totals.apps !== EXPECTED.apps)
   failures.push(`applications: expected ${EXPECTED.apps}, got ${totals.apps}`)
+if (totals.forms !== EXPECTED.forms)
+  failures.push(`forms: expected ${EXPECTED.forms}, got ${totals.forms}`)
 if (totals.features !== EXPECTED.features)
   failures.push(`features: expected ${EXPECTED.features}, got ${totals.features}`)
 
@@ -63,6 +75,9 @@ for (const m of modules) {
   } else {
     if (apps.length !== expected.apps)
       failures.push(`${m.id}: expected ${expected.apps} applications, got ${apps.length}`)
+    const forms = leafForms(m).length
+    if (forms !== expected.forms)
+      failures.push(`${m.id}: expected ${expected.forms} forms, got ${forms}`)
     if (m.features.length !== expected.features)
       failures.push(`${m.id}: expected ${expected.features} features, got ${m.features.length}`)
   }
@@ -88,6 +103,14 @@ for (const m of modules) {
   for (const app of apps) {
     if (!app.url || !app.url.startsWith(PORTAL_HOST))
       failures.push(`${m.id}: "${app.name}" url is not an absolute ${PORTAL_HOST} https URL`)
+
+    if (!app.form) continue
+    if (!app.form.name)
+      failures.push(`${m.id}: "${app.name}" form has no name of its own`)
+    if (!app.form.url || !app.form.url.startsWith(FORM_HOST))
+      failures.push(`${m.id}: "${app.name}" form is not a ${FORM_HOST} URL`)
+    else if (!app.form.url.includes(`portalUrl=${PORTAL_HOST}portal`))
+      failures.push(`${m.id}: "${app.name}" form is missing portalUrl=${PORTAL_HOST}portal`)
   }
 }
 
@@ -123,5 +146,6 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  `check-data OK: ${totals.modules} module, ${totals.apps} applications, ${totals.features} features`,
+  `check-data OK: ${totals.modules} module, ${totals.apps} applications, ` +
+    `${totals.forms} forms, ${totals.features} features`,
 )

@@ -8,12 +8,12 @@
  */
 import { modules as catalogSource } from './modules.js'
 import { srcSet } from '../config/images.js'
-import { embedUrl as sameOriginEmbed } from '../lib/portal.js'
+import { embedUrl as sameOriginEmbed, formEmbedUrl } from '../lib/portal.js'
 
 export const portal = {
-  name: "Parks and Tourism Management",
-  homeTitle: "Parks and Tourism Management",
-  tagline: "Park operations, ranger reporting, wildlife incidents and visitor analytics.",
+  name: "Parks Operations Mapping",
+  homeTitle: "Parks Operations Mapping",
+  tagline: "Park operations, ranger reporting and wildlife.",
   /*
    * The ArcGIS Enterprise this portal signs into and embeds from.
    *
@@ -67,7 +67,7 @@ const SOLUTION_ICONS = {
 
 /** A group's own mark, keyed by group name. */
 const GROUP_ICONS = {
-  "Parks Operations Mapping and Monitoring": "map",
+  "Parks Operations Mapping": "map",
   "Wildlife Conservation Mapping": "tree",
 }
 
@@ -85,6 +85,27 @@ function softAccent(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+/**
+ * The Survey123 form feeding a dashboard, as a solution of its own.
+ *
+ * Its route id is derived from the dashboard's, so the pairing survives in the
+ * URL and a form can never collide with an application id. Like every other
+ * solution it is framed same-origin, through its own proxy base — see
+ * formEmbedUrl() for why a direct frame does not work.
+ *
+ * The name is the form's own, so the form rows are distinguishable on their own
+ * terms rather than relying on the dashboard above to tell them apart.
+ */
+function toForm(app, parentId) {
+  return {
+    id: `${parentId}-form`,
+    name: app.form.name,
+    icon: 'clipboard',
+    isForm: true,
+    embedUrl: formEmbedUrl(app.form.url),
+  }
+}
+
 /** Turn one catalog application into the shape the UI renders. */
 function toSolution(app) {
   const id = SOLUTION_IDS[app.url]
@@ -93,10 +114,12 @@ function toSolution(app) {
     name: app.name,
     year: app.year,
     icon: SOLUTION_ICONS[id] || 'map',
+    isForm: false,
     // Same-origin only. The Portal sends X-Frame-Options, so a frame pointed
-    // straight at gis.rdb.rw is refused; this routes through the access
-    // server, which attaches the signed-in user's token.
+    // straight at gis.rdb.rw is refused, and a cross-origin frame could not
+    // carry the session either.
     embedUrl: id ? sameOriginEmbed(app.url) : null,
+    form: id && app.form ? toForm(app, id) : null,
   }
 }
 
@@ -127,7 +150,8 @@ function toGroups(mod) {
  * sidebar hold the same objects and not two equal copies. Every filter below
  * therefore only has to run over the groups; the flat view follows.
  */
-const flatten = (groups) => groups.flatMap((g) => g.solutions)
+const flatten = (groups) =>
+  groups.flatMap((g) => g.solutions.flatMap((s) => (s.form ? [s, s.form] : [s])))
 
 const catalog = catalogSource.map((mod) => {
   const groups = toGroups(mod)
@@ -162,7 +186,14 @@ function publishedModules(source) {
   return source
     .map((mod) => {
       const groups = mod.groups
-        .map((g) => ({ ...g, solutions: g.solutions.filter(live) }))
+        .map((g) => ({
+          ...g,
+          solutions: g.solutions
+            .filter(live)
+            // A dashboard whose form went missing still publishes; the form is
+            // an extra way in, not a requirement.
+            .map((s) => (s.form && !live(s.form) ? { ...s, form: null } : s)),
+        }))
         .filter((g) => g.solutions.length > 0)
       return { ...mod, groups, solutions: flatten(groups) }
     })
@@ -177,7 +208,10 @@ export const getSolution = (mod, solutionId) =>
 
 export const stats = {
   modules: modules.length,
-  solutions: modules.reduce((n, m) => n + m.solutions.length, 0),
+  // Dashboards, matching totals.apps. A form is another way into one of these,
+  // not another solution, so counting it here would overstate the portal.
+  solutions: modules.reduce((n, m) => n + m.solutions.filter((s) => !s.isForm).length, 0),
+  forms: modules.reduce((n, m) => n + m.solutions.filter((s) => s.isForm).length, 0),
 }
 
 export const footer = {
@@ -187,8 +221,12 @@ export const footer = {
   contact: { email: '', phone: '' },
   quickLinks: [
     { label: 'Home', to: '/' },
+    // Dashboards only. A form is another way into one of these, not another
+    // solution, so it stays out of the footer like it stays out of stats.
     ...modules.flatMap((mod) =>
-      mod.solutions.map((s) => ({ label: s.name, to: `/module/${mod.id}/app/${s.id}` })),
+      mod.solutions
+        .filter((s) => !s.isForm)
+        .map((s) => ({ label: s.name, to: `/module/${mod.id}/app/${s.id}` })),
     ),
   ],
 }
